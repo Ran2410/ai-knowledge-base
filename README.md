@@ -167,6 +167,33 @@ Response:
 }
 ```
 
+### Chat (RAG)
+```
+POST /api/documents/chat
+Content-Type: application/json
+
+{
+  "question": "Apa isi dokumen ini?",
+  "limit": 5
+}
+```
+
+Response:
+```json
+{
+  "question": "Apa isi dokumen ini?",
+  "answer": "Berdasarkan dokumen yang tersedia...",
+  "sources": [
+    {
+      "chunkId": 4,
+      "content": "1. Normalized Database...",
+      "document": "sample.pdf",
+      "similarity": 0.87
+    }
+  ]
+}
+```
+
 ## Project Structure
 
 ```
@@ -185,7 +212,8 @@ ai-knowledge-base/
 │   │   ├── documentService.js    # Upload & ingestion orchestration
 │   │   ├── documentProcessor.js  # File text extraction
 │   │   ├── embeddingService.js   # Local embedding generation
-│   │   └── searchService.js      # Semantic search with cosine similarity
+│   │   ├── searchService.js      # Semantic search with cosine similarity
+│   │   └── chatService.js        # RAG pipeline with OpenRouter LLM
 │   ├── utils/
 │   │   └── chunker.js        # Text splitting logic
 │   └── middleware/
@@ -201,7 +229,7 @@ ai-knowledge-base/
 
 - [x] **Phase 1: Foundation** — Project setup, DB schema, upload pipeline, local embeddings
 - [x] **Phase 2: Retrieval Engine** — Semantic search endpoint with cosine similarity
-- [ ] **Phase 3: RAG Pipeline** — Chat interface with context-augmented LLM responses
+- [x] **Phase 3: RAG Pipeline** — Chat interface with context-augmented LLM responses
 - [ ] **Phase 4: Memory & Context** — Conversation history & context management
 - [ ] **Phase 5: Frontend** — React UI for upload, search, and chat
 - [ ] **Phase 6: Production** — Caching, rate limiting, error handling, deployment
