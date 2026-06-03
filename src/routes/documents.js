@@ -4,6 +4,7 @@ const upload = require('../middleware/upload');
 const { Document } = require('../models');
 const { extractText } = require('../services/documentProcessor');
 const { processDocument } = require('../services/documentService');
+const { searchChunks } = require('../services/searchService')
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -51,5 +52,37 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+router.post('/search', async (req, res) => {
+  try {
+    const { query, limit } = req.body;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    const topK = Math.min(limit || 5, 20);
+    const results = await searchChunks(query, topK);
+
+    res.json({
+      query,
+      results: results.map(r => ({
+        chunkId: r.id,
+        content: r.content,
+        chunkIndex: r.chunk_index,
+        document: {
+          id: r.document_id,
+          filename: r.filename,
+          fileType: r.file_type,
+        },
+        similarity: parseFloat(parseFloat(r.similarity).toFixed(4)),
+      })),
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;
