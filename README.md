@@ -8,7 +8,7 @@ Built as a production-grade foundation for RAG (Retrieval-Augmented Generation) 
 
 - **Document Upload:** Support for `.pdf`, `.txt`, and `.md` files via REST API
 - **Local Embeddings:** Uses `@xenova/transformers` (all-MiniLM-L6-v2, 384 dims) — runs entirely offline after first model download
-- **Semantic Search:** PostgreSQL `pgvector` with IVFFLAT index for fast cosine similarity queries
+- **Semantic Search:** PostgreSQL `pgvector` with IVFFLAT index for fast cosine similarity queries — query in, ranked results out
 - **Background Processing:** Upload responds instantly; chunking & embedding runs async in the background
 - **Smart Chunking:** Sentence-aware text splitting with configurable overlap to preserve context
 
@@ -47,6 +47,11 @@ Upload (.pdf/.txt/.md)
 ┌─────────────────────┐
 │   PostgreSQL DB     │  Store chunks + vectors (pgvector)
 │   (documents/chunks)│  IVFFLAT index for fast search
+└─────────────────────┘
+          │
+          ▼
+┌─────────────────────┐
+│   SearchService     │  Cosine similarity search + JOIN metadata
 └─────────────────────┘
 ```
 
@@ -131,12 +136,34 @@ Response:
 }
 ```
 
-### Search (Coming Soon)
+### Semantic Search
 ```
-POST /api/search
+POST /api/documents/search
+Content-Type: application/json
+
 {
   "query": "What is machine learning?",
   "limit": 5
+}
+```
+
+Response:
+```json
+{
+  "query": "What is machine learning?",
+  "results": [
+    {
+      "chunkId": 12,
+      "content": "Supervised learning involves training models on labeled data...",
+      "chunkIndex": 3,
+      "document": {
+        "id": 1,
+        "filename": "ml-paper.pdf",
+        "fileType": ".pdf"
+      },
+      "similarity": 0.8732
+    }
+  ]
 }
 ```
 
@@ -157,7 +184,8 @@ ai-knowledge-base/
 │   ├── services/
 │   │   ├── documentService.js    # Upload & ingestion orchestration
 │   │   ├── documentProcessor.js  # File text extraction
-│   │   └── embeddingService.js   # Local embedding generation
+│   │   ├── embeddingService.js   # Local embedding generation
+│   │   └── searchService.js      # Semantic search with cosine similarity
 │   ├── utils/
 │   │   └── chunker.js        # Text splitting logic
 │   └── middleware/
@@ -172,7 +200,7 @@ ai-knowledge-base/
 ## Roadmap
 
 - [x] **Phase 1: Foundation** — Project setup, DB schema, upload pipeline, local embeddings
-- [ ] **Phase 2: Retrieval Engine** — Semantic search endpoint with cosine similarity
+- [x] **Phase 2: Retrieval Engine** — Semantic search endpoint with cosine similarity
 - [ ] **Phase 3: RAG Pipeline** — Chat interface with context-augmented LLM responses
 - [ ] **Phase 4: Memory & Context** — Conversation history & context management
 - [ ] **Phase 5: Frontend** — React UI for upload, search, and chat
