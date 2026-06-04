@@ -48,7 +48,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Upload error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Upload failed" });
   }
 });
 
@@ -62,6 +62,10 @@ router.post("/search", async (req, res) => {
 
     if (!query || query.trim().length === 0) {
       return res.status(400).json({ error: "Query is required" });
+    }
+
+    if (query.length > 2000) {
+      return res.status(400).json({ error: "Query too long (max 2000 chars)" });
     }
 
     const topK = Math.min(limit || 5, 20);
@@ -83,11 +87,16 @@ router.post("/search", async (req, res) => {
     });
   } catch (error) {
     console.error("Search error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Search failed" });
   }
 });
 
 router.post("/chat", async (req, res) => {
+  if (question.length > 2000) {
+    return res
+      .status(400)
+      .json({ error: "Question too long (max 2000 chars)" });
+  }
   try {
     const { question, limit, conversationId } = req.body;
 
@@ -106,7 +115,7 @@ router.post("/chat", async (req, res) => {
     });
   } catch (error) {
     console.error("Chat error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Chat failed" });
   }
 });
 

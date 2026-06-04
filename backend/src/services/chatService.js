@@ -24,8 +24,7 @@ async function chat(question, conversationId = null, limit = 5) {
   const chunks = await searchChunks(question, limit);
 
   if (chunks.length === 0) {
-    const answer =
-      "Tidak ditemukan konten yang relevan di dokumen anda.";
+    const answer = "Tidak ditemukan konten yang relevan di dokumen anda.";
 
     await saveMessage(conversationId, "assistant", answer);
 
@@ -40,7 +39,7 @@ async function chat(question, conversationId = null, limit = 5) {
   const context = chunks
     .map(
       (c, i) =>
-        `[${i + 1}] ${c.filename}, similarity: ${parseFloat(c.similarity).toFixed(2)}\n${c.content}`
+        `[${i + 1}] ${c.filename}, similarity: ${parseFloat(c.similarity).toFixed(2)}\n${c.content}`,
     )
     .join("\n\n---\n\n");
 
@@ -58,7 +57,7 @@ ${context}`;
 
   const messages = [
     { role: "system", content: systemPrompt },
-    ...history, 
+    ...history,
     { role: "user", content: question },
   ];
 
@@ -81,7 +80,7 @@ ${context}`;
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+    throw new Error("LLM service unavailable");
   }
 
   const data = await response.json();
