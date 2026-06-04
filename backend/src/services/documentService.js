@@ -13,13 +13,19 @@ async function processDocument(documentId, filePath, text) {
 
     const embeddingPromises = chunks.map(async (content, index) => {
       const embedding = await getEmbedding(content);
+      const embeddingStr = `[${embedding.join(',')}]`;
 
       await sequelize.query(
         `
-    INSERT INTO chunks (document_id, content, embedding, "chunkIndex", created_at)
-    VALUES ($1, $2, $3, $4, NOW())`,
+    INSERT INTO chunks (document_id, content, embedding, chunk_index, created_at)
+    VALUES (:documentId, :content, :embedding::vector, :chunkIndex, NOW())`,
         {
-          bind: [documentId, content, JSON.stringify(embedding), index],
+          replacements: {
+            documentId,
+            content,
+            embedding: embeddingStr,
+            chunkIndex: index,
+          },
         },
       );
     });
@@ -29,6 +35,7 @@ async function processDocument(documentId, filePath, text) {
       `All chunks for document ${documentId} processed and stored successfully.`,
     );
   } catch (error) {
+    console.error(`Processing failed for doc ${documentId}:`, error.message);
     await Document.destroy({ where: { id: documentId } });
     throw error;
   }
