@@ -1,21 +1,46 @@
 const { searchChunks } = require("./searchService");
+const {
+  createConversation,
+  getRecentMessages,
+  saveMessage,
+} = require("./conversationService");
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-async function chat(question, limit = 5) {
+const HISTORY_LIMIT = 10;
+
+async function chat(question, conversationId = null, limit = 5) {
+  let isNewConversation = false;
+  if (!conversationId) {
+    const conversation = await createConversation(question);
+    conversationId = conversation.id;
+    isNewConversation = true;
+  }
+
+  const history = await getRecentMessages(conversationId, HISTORY_LIMIT);
+
+  await saveMessage(conversationId, "user", question);
+
   const chunks = await searchChunks(question, limit);
 
   if (chunks.length === 0) {
+    const answer =
+      "Tidak ditemukan konten yang relevan di dokumen anda.";
+
+    await saveMessage(conversationId, "assistant", answer);
+
     return {
-      answer: "Tidak Ditemukan konten yang relevan di dokumen anda.",
+      conversationId,
+      answer,
       sources: [],
+      isNewConversation,
     };
   }
 
   const context = chunks
     .map(
       (c, i) =>
-        `[${i + 1}] ${c.filename}, similarity: ${parseFloat(c.similarity).toFixed(2)}\n${c.content}`,
+        `[${i + 1}] ${c.filename}, similarity: ${parseFloat(c.similarity).toFixed(2)}\n${c.content}`
     )
     .join("\n\n---\n\n");
 
@@ -26,9 +51,16 @@ ATURAN:
 - Jika informasi tidak ada di konteks, katakan "Saya tidak menemukan informasi tersebut di dokumen yang tersedia."
 - Sertakan nomor referensi [1], [2], dll. saat mengutip informasi dari dokumen.
 - Jawab dalam Bahasa Indonesia.
+- Percakapan sebelumnya ada di history — gunakan untuk konteks, tapi fokus ke pertanyaan terbaru.
 
 KONTEKS DOKUMEN:
 ${context}`;
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history, 
+    { role: "user", content: question },
+  ];
 
   const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
@@ -40,11 +72,8 @@ ${context}`;
     },
     body: JSON.stringify({
       model:
-        process.env.OPENROUTER_MODEL || "meta-llama/llama-3.2-3b-instruct:free",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: question },
-      ],
+        process.env.OPENROUTER_MODEL || "meta-llama/llama-3.1-8b-instruct:free",
+      messages,
       max_tokens: 1024,
       temperature: 0.3,
     }),
@@ -58,7 +87,10 @@ ${context}`;
   const data = await response.json();
   const answer = data.choices[0].message.content;
 
+  await saveMessage(conversationId, "assistant", answer);
+
   return {
+    conversationId,
     answer,
     sources: chunks.map((c) => ({
       chunkId: c.id,
@@ -66,6 +98,7 @@ ${context}`;
       document: c.filename,
       similarity: parseFloat(parseFloat(c.similarity).toFixed(4)),
     })),
+    isNewConversation,
   };
 }
 
