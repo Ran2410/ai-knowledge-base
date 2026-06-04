@@ -11,6 +11,7 @@ Built as a production-grade foundation for RAG (Retrieval-Augmented Generation) 
 - **Semantic Search:** PostgreSQL `pgvector` with IVFFLAT index for fast cosine similarity queries — query in, ranked results out
 - **Background Processing:** Upload responds instantly; chunking & embedding runs async in the background
 - **Smart Chunking:** Sentence-aware text splitting with configurable overlap to preserve context
+- **Memory & Context:** Multi-turn conversation with sliding window history (last 10 messages) and auto-created sessions
 
 ## Tech Stack
 
@@ -21,6 +22,7 @@ Built as a production-grade foundation for RAG (Retrieval-Augmented Generation) 
 | ORM         | Sequelize (hybrid: model management + raw SQL for vector ops) |
 | ML/AI       | `@xenova/transformers` — local ONNX embeddings |
 | PDF Parser  | `pdf-parse` v1.1.1                      |
+| LLM         | OpenRouter (RAG chat)                   |
 | Dev Tools   | Nodemon, dotenv, CORS                   |
 
 ## Architecture
@@ -47,11 +49,17 @@ Upload (.pdf/.txt/.md)
 ┌─────────────────────┐
 │   PostgreSQL DB     │  Store chunks + vectors (pgvector)
 │   (documents/chunks)│  IVFFLAT index for fast search
-└─────────────────────┘
+└─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
 │   SearchService     │  Cosine similarity search + JOIN metadata
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│   ChatService       │  RAG: search → build context → LLM → answer
+│   + Conversation    │  Memory: sliding window (10 msgs), auto-session
 └─────────────────────┘
 ```
 
@@ -87,7 +95,9 @@ sudo apt install postgresql-18-pgvector
    Edit `.env`:
    ```env
    PORT=3000
-   DATABASE_URL=postgresql://postgres:your_password@localhost:5432/ai_knowledge
+   DATABASE_URL=postgresql://postgres:***@localhost:5432/ai_knowledge
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
    ```
 
 4. **Initialize the database**
@@ -98,7 +108,7 @@ sudo apt install postgresql-18-pgvector
    This script will:
    - Create the `ai_knowledge` database
    - Enable the `vector` extension
-   - Sync Sequelize models (`documents`, `chunks` tables)
+   - Sync all Sequelize models (`documents`, `chunks`, `conversations`, `messages`)
    - Add the `embedding` column with `vector(384)` type
    - Create the IVFFLAT index
 
@@ -122,20 +132,6 @@ Content-Type: multipart/form-data
 Field: file (PDF, TXT, or MD)
 ```
 
-Response:
-```json
-{
-  "message": "Document uploaded and queued for processing",
-  "document": {
-    "id": 1,
-    "title": "sample.pdf",
-    "type": "pdf",
-    "status": "processing",
-    "createdAt": "2025-06-02T10:00:00.000Z"
-  }
-}
-```
-
 ### Semantic Search
 ```
 POST /api/documents/search
@@ -147,33 +143,14 @@ Content-Type: application/json
 }
 ```
 
-Response:
-```json
-{
-  "query": "What is machine learning?",
-  "results": [
-    {
-      "chunkId": 12,
-      "content": "Supervised learning involves training models on labeled data...",
-      "chunkIndex": 3,
-      "document": {
-        "id": 1,
-        "filename": "ml-paper.pdf",
-        "fileType": ".pdf"
-      },
-      "similarity": 0.8732
-    }
-  ]
-}
-```
-
-### Chat (RAG)
+### Chat (RAG + Memory)
 ```
 POST /api/documents/chat
 Content-Type: application/json
 
 {
   "question": "Apa isi dokumen ini?",
+  "conversationId": 1,   // optional — omit to auto-create new conversation
   "limit": 5
 }
 ```
@@ -181,6 +158,7 @@ Content-Type: application/json
 Response:
 ```json
 {
+  "conversationId": 1,
   "question": "Apa isi dokumen ini?",
   "answer": "Berdasarkan dokumen yang tersedia...",
   "sources": [
@@ -190,8 +168,17 @@ Response:
       "document": "sample.pdf",
       "similarity": 0.87
     }
-  ]
+  ],
+  "isNewConversation": false
 }
+```
+
+### Conversations
+
+```
+GET  /api/conversations           — List all conversations
+GET  /api/conversations/:id       — Get conversation with messages
+DELETE /api/conversations/:id     — Delete conversation + messages
 ```
 
 ## Project Structure
@@ -200,29 +187,34 @@ Response:
 ai-knowledge-base/
 ├── src/
 │   ├── config/
-│   │   ├── database.js       # Sequelize connection
-│   │   └── init-db.js        # DB initialization script
+│   │   ├── database.js           # Sequelize connection
+│   │   └── init-db.js            # DB initialization script
 │   ├── models/
-│   │   ├── document.js       # Document model
-│   │   ├── chunk.js          # Chunk model (with vector field)
-│   │   └── index.js          # Model associations
+│   │   ├── document.js           # Document model
+│   │   ├── chunk.js              # Chunk model (with vector field)
+│   │   ├── conversation.js       # Conversation model
+│   │   ├── message.js            # Message model
+│   │   └── index.js              # Model associations
 │   ├── routes/
-│   │   └── documents.js      # API routes
+│   │   ├── documents.js          # Upload, search, chat routes
+│   │   └── conversations.js      # Conversation CRUD routes
 │   ├── services/
 │   │   ├── documentService.js    # Upload & ingestion orchestration
 │   │   ├── documentProcessor.js  # File text extraction
 │   │   ├── embeddingService.js   # Local embedding generation
 │   │   ├── searchService.js      # Semantic search with cosine similarity
-│   │   └── chatService.js        # RAG pipeline with OpenRouter LLM
+│   │   ├── chatService.js        # RAG pipeline with memory & context
+│   │   └── conversationService.js # Conversation CRUD + sliding window
 │   ├── utils/
-│   │   └── chunker.js        # Text splitting logic
+│   │   └── chunker.js            # Text splitting logic
 │   └── middleware/
-│       └── upload.js         # Multer file upload config
-├── uploads/                  # Temporary upload storage
-├── .env                      # Environment variables (DO NOT COMMIT)
+│       └── upload.js             # Multer file upload config
+├── uploads/                      # Temporary upload storage
+├── .env                          # Environment variables (DO NOT COMMIT)
+├── .env.example                  # Environment template
 ├── .gitignore
-├── app.js                    # Express app setup
-└── server.js                 # Server entry point
+├── app.js                        # Express app setup
+└── server.js                     # Server entry point
 ```
 
 ## Roadmap
@@ -230,7 +222,7 @@ ai-knowledge-base/
 - [x] **Phase 1: Foundation** — Project setup, DB schema, upload pipeline, local embeddings
 - [x] **Phase 2: Retrieval Engine** — Semantic search endpoint with cosine similarity
 - [x] **Phase 3: RAG Pipeline** — Chat interface with context-augmented LLM responses
-- [ ] **Phase 4: Memory & Context** — Conversation history & context management
+- [x] **Phase 4: Memory & Context** — Conversation history, sliding window, auto-created sessions
 - [ ] **Phase 5: Frontend** — React UI for upload, search, and chat
 - [ ] **Phase 6: Production** — Caching, rate limiting, error handling, deployment
 
@@ -238,7 +230,8 @@ ai-knowledge-base/
 
 - **Embedding model:** First run downloads ~20MB model cache to `~/.cache/xenova`. Subsequent runs use the cached model.
 - **Vector index:** Uses IVFFLAT with 100 lists. For datasets >10k chunks, consider tuning or switching to HNSW.
-- **Sequ Hybrid approach:** Sequelize handles table creation and relations, but all vector operations use raw SQL queries since Sequelize doesn't support PostgreSQL `vector` type natively.
+- **Hybrid approach:** Sequelize handles table creation and relations, but all vector operations use raw SQL queries since Sequelize doesn't support PostgreSQL `vector` type natively.
+- **Memory:** Sliding window of 10 messages per conversation. History is loaded from DB and included in LLM context.
 
 ## License
 

@@ -1,5 +1,5 @@
 const sequelize = require("./database");
-require("../models"); // Load models
+require("../models");
 
 async function initDB() {
   try {
@@ -8,10 +8,7 @@ async function initDB() {
 
     await sequelize.sync({ alter: true });
     console.log("Tables created/synced");
-await sequelize.sync({ force: true }); 
-    console.log('Tables recreated');
 
-    // Pastikan kolom embedding ada (karena Sequelize tidak support type 'vector')
     await sequelize.query(`
       DO $$ 
       BEGIN

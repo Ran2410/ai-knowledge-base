@@ -89,18 +89,20 @@ router.post("/search", async (req, res) => {
 
 router.post("/chat", async (req, res) => {
   try {
-    const { question, limit } = req.body;
+    const { question, limit, conversationId } = req.body;
 
     if (!question || question.trim().length === 0) {
       return res.status(400).json({ error: "Question is required" });
     }
 
-    const result = await chat(question, limit || 5);
+    const result = await chat(question, conversationId || null, limit || 5);
 
     res.json({
+      conversationId: result.conversationId,
       question,
       answer: result.answer,
       sources: result.sources,
+      isNewConversation: result.isNewConversation,
     });
   } catch (error) {
     console.error("Chat error:", error);
